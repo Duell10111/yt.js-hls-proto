@@ -30,7 +30,7 @@ app.listen(port, () => {
 
 const mimeTypeHLS = "application/vnd.apple.mpegURL"
 
-app.get("/video/:id/:path", async (req, res, next) => {
+app.get("/video/:id/:path", async (req, res) => {
     const videoId = req.params.id
     const path = req.params.path
     try {

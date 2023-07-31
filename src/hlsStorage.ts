@@ -31,7 +31,7 @@ export async function getHLSFile(videoId: string, path: string, {getFileLocally,
         if(path === "master.m3u8") {
             return hlsData.master
         } else {
-            return hlsData.subFiles[path]
+            return hlsData.subFiles[path.slice(0, -5)] // Remove .m3u8
         }
     } catch (e) {
         console.error("Error while fetching hlsData: ", e)

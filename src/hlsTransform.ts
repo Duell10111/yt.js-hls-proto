@@ -104,8 +104,9 @@ function generateHeader(format: Format, audio?: string) {
     const codec = codecsExtraction(format.mime_type)
     const audioHeader = audio ? `,AUDIO="${audio}"` : ""
     if(format.has_video) {
+        const fps = format.fps ? `,FRAME-RATE=${format.fps}` : ""
         const averageBandwidth = format.average_bitrate ? `,AVERAGE-BANDWIDTH=${format.average_bitrate}` : ""
-        return `#EXT-X-STREAM-INF:PROGRAM-ID=1,BANDWIDTH=${format.bitrate}${averageBandwidth},RESOLUTION=${format.width}x${format.height},CODECS="${codec}"${audioHeader}`
+        return `#EXT-X-STREAM-INF:BANDWIDTH=${format.bitrate}${averageBandwidth}${fps},RESOLUTION=${format.width}x${format.height},CODECS="${codec}"${audioHeader}`
     }
 }
 
