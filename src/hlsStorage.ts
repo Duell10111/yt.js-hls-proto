@@ -1,8 +1,9 @@
+import {Innertube} from "youtubei.js"
 import {hlsTransform, saveHLSFile} from "./hlsTransform";
 
-export type getFileLocally = (videoId: string, filePath: string) => string | undefined
-export type saveFileLocally = (videoId: string, filePath: string, content: string) => void
-export type deleteFolder = (videoId: string) => void
+export type getFileLocally = (videoId: string, filePath: string) => Promise<string | undefined>
+export type saveFileLocally = (videoId: string, filePath: string, content: string) => Promise<void>
+export type deleteFolder = (videoId: string) => Promise<void>
 
 export interface FileStorage {
     getFileLocally: getFileLocally,
@@ -10,23 +11,23 @@ export interface FileStorage {
     deleteFolder: deleteFolder
 }
 
-export async function getHLSFile(videoId: string, path: string, {getFileLocally, saveFileLocally, deleteFolder}: FileStorage) {
-    const metadata  = getFileLocally(videoId, "metadata.json")
+export async function getHLSFile(videoId: string, path: string, {getFileLocally, saveFileLocally, deleteFolder}: FileStorage, innerTube?: Innertube) {
+    const metadata= await getFileLocally(videoId, "metadata.json")
     const expires = metadata ? JSON.parse(metadata) as {expires: number} : undefined
     if(expires && expires.expires > Date.now()) {
         console.log("Trying to get local cache")
-        const data = getFileLocally(videoId, path)
+        const data = await getFileLocally(videoId, path)
         if(data){
             return data
         }
     } else {
         console.log("Deleting old data...")
-        deleteFolder(videoId)
+        await deleteFolder(videoId)
     }
 
     try {
-        const hlsData = await hlsTransform(videoId)
-        saveHLSFile(hlsData, (name, content) => saveFileLocally(videoId, name, content))
+        const hlsData = await hlsTransform(videoId, innerTube)
+        await saveHLSFile(hlsData, async (name, content) => await saveFileLocally(videoId, name, content))
 
         if(path === "master.m3u8") {
             return hlsData.master

@@ -1,16 +1,15 @@
-import {Innertube, Player} from "youtubei.js"
-import {Format} from "youtubei.js/dist/src/parser/misc";
+import {Innertube, Player, Misc} from "youtubei.js"
 import _ from "lodash";
 
-export type saveFile = (name: string, content: string) => void
+export type saveFile = (name: string, content: string) => Promise<void>
 
-export function saveHLSFile(hlsPlaylist: HLSStructure, saveFileFkt: saveFile) {
-    saveFileFkt("master.m3u8", hlsPlaylist.master)
-    Object.entries(hlsPlaylist.subFiles).map(value => {
+export async function saveHLSFile(hlsPlaylist: HLSStructure, saveFileFkt: saveFile) {
+    await saveFileFkt("master.m3u8", hlsPlaylist.master)
+    await Promise.all(Object.entries(hlsPlaylist.subFiles).map(value => {
         saveFileFkt(value[0] + ".m3u8", value[1])
-    })
+    }))
     if(hlsPlaylist.expirationData) {
-        saveFileFkt("metadata.json", JSON.stringify({
+        await saveFileFkt("metadata.json", JSON.stringify({
             expires: hlsPlaylist.expirationData?.getTime()
         }))
     }
@@ -24,8 +23,8 @@ export interface HLSStructure {
     expirationData?: Date;
 }
 
-export async function hlsTransform(videoId: string) {
-    const youtube = await Innertube.create({ /* setup - see above */ });
+export async function hlsTransform(videoId: string, innerTube?: Innertube) {
+    const youtube = innerTube ?? await Innertube.create({});
     const videoInfo = await youtube.getInfo(videoId)
 
     const adaptiveFormats = videoInfo.streaming_data?.adaptive_formats?.filter(format => {
@@ -96,11 +95,11 @@ export async function hlsTransform(videoId: string) {
     } as HLSStructure
 }
 
-function generateAudioHeader(format: Format, groupID: string, uri: string, defaultAudio?: boolean) {
+function generateAudioHeader(format: Misc.Format, groupID: string, uri: string, defaultAudio?: boolean) {
     return `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${groupID}",LANGUAGE="en",NAME="${format.audio_quality}",AUTOSELECT=YES, DEFAULT=YES,URI="${uri}"`
 }
 
-function generateHeader(format: Format, audio?: string) {
+function generateHeader(format: Misc.Format, audio?: string) {
     const codec = codecsExtraction(format.mime_type)
     const audioHeader = audio ? `,AUDIO="${audio}"` : ""
     if(format.has_video) {
@@ -110,7 +109,7 @@ function generateHeader(format: Format, audio?: string) {
     }
 }
 
-function generateSubFile(format: Format[], player?: Player) {
+function generateSubFile(format: Misc.Format[], player?: Player) {
     console.log(JSON.stringify(format, null, 4))
 
     const duration = _.maxBy(format, f => f.approx_duration_ms)?.approx_duration_ms

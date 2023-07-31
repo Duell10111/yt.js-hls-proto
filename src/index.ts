@@ -22,7 +22,7 @@ import {getHLSFile} from "./hlsStorage";
 
 
 const app: Express = express();
-const port = process.env.PORT ?? 5000;
+const port = process.env.PORT ?? 7500;
 
 app.listen(port, () => {
     console.log(`⚡️[server]: Server is running at http://localhost:${port}`);
@@ -84,7 +84,7 @@ app.get("/video/:id/:path", async (req, res) => {
 //     res.sendStatus(404)
 // }
 
-const saveFileLocally = (videoId: string, name: string, content: string) => {
+const saveFileLocally = async (videoId: string, name: string, content: string) => {
     const filePath = path.join(__dirname, "/../playlists/" + videoId + "/" + name)
     const dirPath = path.dirname(filePath)
     if(!fs.existsSync(dirPath)) {
@@ -93,14 +93,14 @@ const saveFileLocally = (videoId: string, name: string, content: string) => {
     fs.writeFile(filePath, content, console.error)
 }
 
-const getFileLocally = (videoId: string, name: string) => {
+const getFileLocally = async (videoId: string, name: string) => {
     const filePath = path.join(__dirname, "/../playlists/" + videoId + "/" + name)
     if(fs.existsSync(filePath)) {
         return fs.readFileSync(filePath, {}).toString()
     }
 }
 
-const deleteFolder = (videoId: string) => {
+const deleteFolder = async (videoId: string) => {
     const filePath = path.join(__dirname, "/../playlists/" + videoId)
     if(fs.existsSync(filePath)) {
         fs.rmSync(filePath, {recursive: true, force: true})
