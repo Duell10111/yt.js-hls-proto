@@ -1,5 +1,6 @@
-import {Innertube, Player, Misc} from "youtubei.js"
+import {Innertube, Misc, Player} from "youtubei.js"
 import _ from "lodash";
+import {getSegments} from "./segmentExtractor";
 
 export type saveFile = (name: string, content: string) => Promise<void>
 
@@ -31,12 +32,7 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
         return (format.mime_type.startsWith("video/mp4") || format.mime_type.startsWith("audio/mp4") )
     }) ?? []
 
-    console.log(JSON.stringify(adaptiveFormats, null, 2))
-
-    // return {
-    //     master: "",
-    //     subFiles: {}
-    // }
+    // console.log(JSON.stringify(adaptiveFormats, null, 2))
 
     // const videoStreams = adaptiveFormats.filter(v => v.has_video)
     // Only keep biggest quality atm
@@ -47,7 +43,7 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
 
     const videoKeys = Object.keys(videoGroups)
 
-    console.log(JSON.stringify(Object.keys(videoGroups)))
+    // console.log(JSON.stringify(Object.keys(videoGroups)))
 
     const player = youtube.session.player
 
@@ -62,29 +58,28 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
 
     let defaultAudioValue : string | undefined = undefined
 
-    audioLanguages.forEach(key => {
+    await Promise.all(audioLanguages.flatMap(key => {
         const formats = audioGroups[key]
-        formats.map(f => {
+        return formats.map(async f => {
             const subFileName = f.itag;
             const audioHeader = generateAudioHeader(f, "audio", subFileName + ".m3u8")
-            subFiles[subFileName] = generateSubFile([f], player)
+            subFiles[subFileName] = await generateSubFile([f], player)
             masterFile.push(audioHeader)
             defaultAudioValue = "audio"
         })
-    })
+    }))
 
-    videoKeys.forEach(key => {
+    await Promise.all(videoKeys.map(async key => {
         const formats = videoGroups[key]
         const header = generateHeader(formats[0], defaultAudioValue)
         if(!header) {
             console.warn("No Header generated for: ", JSON.stringify(formats, null, 4))
             return
         }
-        masterFile.push(header)
         const subFileName = "v-" + formats[0].itag
-        subFiles[subFileName] = generateSubFile(formats, player)
-        masterFile.push(subFileName + ".m3u8")
-    })
+        subFiles[subFileName] = await generateSubFile(formats, player)
+        masterFile.push(...[header, subFileName + ".m3u8"])
+    }))
 
     const masterPlaylist = masterFile.join("\n")
 
@@ -96,7 +91,7 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
 }
 
 function generateAudioHeader(format: Misc.Format, groupID: string, uri: string, defaultAudio?: boolean) {
-    return `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${groupID}",LANGUAGE="en",NAME="${format.audio_quality}",AUTOSELECT=YES, DEFAULT=YES,URI="${uri}"`
+    return `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${groupID}",LANGUAGE="en",NAME="${format.audio_quality}",AUTOSELECT=YES,DEFAULT=YES,URI="${uri}"`
 }
 
 function generateHeader(format: Misc.Format, audio?: string) {
@@ -109,8 +104,10 @@ function generateHeader(format: Misc.Format, audio?: string) {
     }
 }
 
-function generateSubFile(format: Misc.Format[], player?: Player) {
-    console.log(JSON.stringify(format, null, 4))
+async function generateSubFile(format: Misc.Format[], player?: Player) {
+    // console.log(JSON.stringify(format, null, 4))
+
+    // TODO: Skip empty formats?
 
     const duration = _.maxBy(format, f => f.approx_duration_ms)?.approx_duration_ms
 
@@ -118,25 +115,53 @@ function generateSubFile(format: Misc.Format[], player?: Player) {
         "#EXTM3U",
         "#EXT-X-PLAYLIST-TYPE:VOD",
         `#EXT-X-TARGETDURATION:${Math.ceil(duration ? duration / 1000 : 10)}`,
-        "#EXT-X-VERSION:4",
+        "#EXT-X-VERSION:7",
         "#EXT-X-MEDIA-SEQUENCE:0"
     ]
+    const xMaps: {[url: string]: string} = {}
 
-    const formats = format.flatMap(f => {
-        return [
+    const formats = (await Promise.all(format.map(async f => {
+        const url = f.decipher(player)
+
+        const indexRange = f.index_range
+        const intRange = f.init_range
+
+        try {
+            if(indexRange && intRange) {
+                const segments = await getSegments(url, indexRange.end)
+                // console.log("Segments: ", segments)
+
+                // Int Range
+                xMaps[f.itag] = `#EXT-X-MAP:URI="${url}",BYTERANGE="${intRange.end}@${intRange.start}"`
+
+                return segments.flatMap(segment => {
+                    return [
+                        `#EXTINF:${segment.duration},`,
+                        `#EXT-X-BYTERANGE:${segment.length}@${segment.start}`,
+                        url
+                    ]
+                })
+            }
+        } catch (e) {
+            console.error(e)
+        }
+
+        // Otherwise only return single segment
+        console.log("Returning only single segment")
+
+        return _.compact([
             `#EXTINF:${f.approx_duration_ms/1000},`,
-            f.decipher(player)
-        ]
-    })
+            url
+        ])
+    }))).flat()
+
+    hlsStart.push(...Object.values(xMaps))
+
     hlsStart.push(...formats)
 
     hlsStart.push("#EXT-X-ENDLIST")
 
-    const playlist = hlsStart.join("\n")
-
-    console.log(playlist)
-
-    return playlist
+    return hlsStart.join("\n")
 }
 
 function codecsExtraction(mimeType: string) {
