@@ -1,4 +1,4 @@
-import {Innertube, Misc, Player} from "youtubei.js"
+import {Innertube, Misc, Player, YTNodes} from "youtubei.js"
 import _ from "lodash";
 import {getSegments} from "./segmentExtractor";
 
@@ -7,7 +7,7 @@ export type saveFile = (name: string, content: string) => Promise<void>
 export async function saveHLSFile(hlsPlaylist: HLSStructure, saveFileFkt: saveFile) {
     await saveFileFkt("master.m3u8", hlsPlaylist.master)
     await Promise.all(Object.entries(hlsPlaylist.subFiles).map(value => {
-        saveFileFkt(value[0] + ".m3u8", value[1])
+        saveFileFkt(value[0], value[1])
     }))
     if(hlsPlaylist.expirationData) {
         await saveFileFkt("metadata.json", JSON.stringify({
@@ -52,6 +52,18 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
     ]
     const subFiles : {[key: string]: string} = {}
 
+    // Chapters
+    const chapters = _.chain(videoInfo.player_overlays?.decorated_player_bar?.player_bar?.markers_map ?? [])
+        .flatMap(c => c.value.chapters).compact().value()
+    if(chapters.length > 0) {
+        subFiles["chapters.json"] = chapterExtractionJSON(chapters)
+        masterFile.push(
+            `#EXT-X-SESSION-DATA:DATA-ID="com.apple.hls.chapters",URI="chapters.json"`
+        )
+    } else {
+        console.log("No Chapters available for : ", videoId)
+    }
+
     const audioGroups = _.groupBy(audioStreams, value => value.language)
 
     const audioLanguages = Object.keys(audioGroups)
@@ -61,8 +73,8 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
     await Promise.all(audioLanguages.flatMap(key => {
         const formats = audioGroups[key]
         return formats.map(async f => {
-            const subFileName = f.itag;
-            const audioHeader = generateAudioHeader(f, "audio", subFileName + ".m3u8")
+            const subFileName = f.itag + ".m3u8";
+            const audioHeader = generateAudioHeader(f, "audio", subFileName)
             subFiles[subFileName] = await generateSubFile([f], player)
             masterFile.push(audioHeader)
             defaultAudioValue = "audio"
@@ -76,9 +88,9 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
             console.warn("No Header generated for: ", JSON.stringify(formats, null, 4))
             return
         }
-        const subFileName = "v-" + formats[0].itag
+        const subFileName = "v-" + formats[0].itag  + ".m3u8"
         subFiles[subFileName] = await generateSubFile(formats, player)
-        masterFile.push(...[header, subFileName + ".m3u8"])
+        masterFile.push(...[header, subFileName])
     }))
 
     const masterPlaylist = masterFile.join("\n")
@@ -166,5 +178,43 @@ async function generateSubFile(format: Misc.Format[], player?: Player) {
 
 function codecsExtraction(mimeType: string) {
     return mimeType.split('codecs="')[1].split('"')[0]
+}
+
+interface HLSChapter {
+    chapter: number;
+    "start-time": number;
+    titles: {
+        language: string;
+        title: string;
+    }[],
+    images?: {
+        "image-category": string,
+        "pixel-width": number,
+        "pixel-height": number,
+        "url": string
+    }[]
+}
+
+function chapterExtractionJSON(chapters: YTNodes.Chapter[]) {
+    const json = chapters.map((chapter, index) => {
+        return {
+            chapter: index,
+            "start-time": chapter.time_range_start_millis / 1000,
+            titles: [{
+                language: "en",
+                title: chapter.title.text
+            }],
+            images: chapter.thumbnail.map(image => (
+                {
+                    "image-category": "hd",
+                    "pixel-height": image.height,
+                    "pixel-width": image.width,
+                    url: image.url
+                }
+            ))
+        } as HLSChapter
+    })
+
+    return JSON.stringify(json)
 }
 
