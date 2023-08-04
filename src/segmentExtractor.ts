@@ -24,7 +24,6 @@ export async function getSegments(url: string, indexEnd: number) {
         }
     })
     if(res.ok) {
-        console.log("StatusCode Segmentsrequest: " + res.statusText)
         const arrayBuffer = await res.arrayBuffer()
         const ab = (arrayBuffer as any) // To define a new property for mp4box
         ab.fileStart = 0;
@@ -33,7 +32,7 @@ export async function getSegments(url: string, indexEnd: number) {
 
         const sidxTimescale : number = file["sidx"]["timescale"]
         const sidxSection : SIDXReferences[] = file["sidx"]["references"]
-        console.log("Timescale: ", sidxTimescale)
+        // console.log("Timescale: ", sidxTimescale)
         // console.log(JSON.stringify(sidxSection, null, 4))
 
         let currentStartPoint = indexEnd
@@ -52,7 +51,7 @@ export async function getSegments(url: string, indexEnd: number) {
             return info
         })
     } else {
-        console.log(res.status)
+        console.log("SegmentExtractor: Got non okay response: ",res.status)
     }
 
     return []

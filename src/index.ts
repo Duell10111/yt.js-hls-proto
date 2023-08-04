@@ -1,7 +1,7 @@
-import express, { Express } from 'express';
+import express, {Express} from 'express';
 import * as fs from "fs";
 import path from "path";
-import {getHLSFile} from "./hlsStorage";
+import {deleteExpiringFiles, FileStorage, getHLSFile} from "./hlsStorage";
 
 const app: Express = express();
 const port = process.env.PORT ?? 7500;
@@ -16,11 +16,7 @@ app.get("/video/:id/:path", async (req, res) => {
     const videoId = req.params.id
     const path = req.params.path
     try {
-        const data = await getHLSFile(videoId, path, {
-            getFileLocally,
-            deleteFolder,
-            saveFileLocally
-        })
+        const data = await getHLSFile(videoId, path, fileStorage)
         res.set('Content-Type', mimeTypeHLS);
         res.send(data)
     } catch (e) {
@@ -28,6 +24,16 @@ app.get("/video/:id/:path", async (req, res) => {
         res.sendStatus(500)
     }
 
+})
+
+app.get("/cleanup", async (req, res) => {
+    try {
+        await deleteExpiringFiles(fileStorage)
+        res.sendStatus(200)
+    } catch (e) {
+        console.error("Error in cleanup-fkt: ",e)
+        res.sendStatus(500)
+    }
 })
 
 const saveFileLocally = async (videoId: string, name: string, content: string) => {
@@ -52,6 +58,20 @@ const deleteFolder = async (videoId: string) => {
         fs.rmSync(filePath, {recursive: true, force: true})
     }
 }
+
+const getAllVideoIds = async () => {
+    const filePath = path.join(__dirname, "/../playlists")
+    return fs.readdirSync(filePath).filter(function (file) {
+        return fs.statSync(filePath + '/' + file).isDirectory();
+    });
+}
+
+const fileStorage = {
+    getFileLocally,
+    deleteFolder,
+    saveFileLocally,
+    getAllVideoIds
+} as FileStorage
 
 // getHLSFile("Wc_iD5Nj-I0", "master.m3u8", {
 //     getFileLocally,
