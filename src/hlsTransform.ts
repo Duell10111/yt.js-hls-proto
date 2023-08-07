@@ -34,9 +34,9 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
 
     // console.log(JSON.stringify(adaptiveFormats, null, 2))
 
-    // const videoStreams = adaptiveFormats.filter(v => v.has_video)
+    const videoStreams = adaptiveFormats.filter(v => v.has_video)
     // Only keep biggest quality atm
-    const videoStreams = [_.chain(adaptiveFormats).filter(v => v.has_video).maxBy(value => value.bitrate).value()]
+    // const videoStreams = [_.chain(adaptiveFormats).filter(v => v.has_video).maxBy(value => value.bitrate).value()]
     const audioStreams = adaptiveFormats.filter(v => v.has_audio)
 
     const videoGroups = _.groupBy(videoStreams, value => value.mime_type)
@@ -103,7 +103,8 @@ export async function hlsTransform(videoId: string, innerTube?: Innertube) {
 }
 
 function generateAudioHeader(format: Misc.Format, groupID: string, uri: string, defaultAudio?: boolean) {
-    return `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${groupID}",LANGUAGE="en",NAME="${format.audio_quality}",AUTOSELECT=YES,DEFAULT=YES,URI="${uri}"`
+    const language = format.language ?? "en";
+    return `#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="${groupID}",LANGUAGE="${language}",NAME="${format.audio_quality}",AUTOSELECT=YES,DEFAULT=YES,URI="${uri}"`
 }
 
 function generateHeader(format: Misc.Format, audio?: string) {
@@ -195,15 +196,18 @@ interface HLSChapter {
     }[]
 }
 
+// Add all languages needed
+const chapterLanguages = ["de", "en"]
+
 function chapterExtractionJSON(chapters: YTNodes.Chapter[]) {
     const json = chapters.map((chapter, index) => {
         return {
             chapter: index,
             "start-time": chapter.time_range_start_millis / 1000,
-            titles: [{
-                language: "en",
+            titles: chapterLanguages.map(languageCode => ({
+                language: languageCode,
                 title: chapter.title.text
-            }],
+            })),
             images: chapter.thumbnail.map(image => (
                 {
                     "image-category": "hd",
